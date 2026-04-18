@@ -1,16 +1,21 @@
 # Healthcare Bias Prediction Web App
 
-This app demonstrates prediction differences for healthcare utilization with and without bias mitigation using the same MEPS HC-181 pipeline from your notebook.
+This app demonstrates prediction differences for healthcare utilization across multiple bias-mitigation and privacy-aware modeling approaches using the same MEPS HC-181 pipeline from your updated notebook.
 
 ## What this app does
 
-- Trains a baseline Logistic Regression model on original data.
-- Trains a debiased Logistic Regression model after AIF360 Reweighing.
+- Trains multiple notebook-aligned variants, including:
+  - Logistic Regression (original)
+  - Random Forest (original)
+  - Logistic Regression + Reweighing
+  - Logistic Regression + Disparate Impact Remover (if available)
+  - Logistic Regression + SMOTE (if imbalanced-learn is installed)
+  - Federated and DP-Federated logistic variants (lightweight simulation)
+  - ROC-inspired post-processing threshold variant
 - Lets you enter customer details using the same feature set used in the notebook.
-- Returns side-by-side predictions:
-  - Without bias mitigation
-  - With bias mitigation
-- Shows fairness snapshot metrics for both models.
+- Returns side-by-side predictions for baseline and preferred fair model, plus full per-model prediction table.
+- Shows expanded fairness and performance metrics, including balanced accuracy, disparate impact, average odds difference, statistical parity difference, equal opportunity difference, Theil index, precision/recall/F1, and ROC AUC.
+- Shows signed-residual group diagnostics and trade-off highlights (accuracy/fairness/privacy/explainability).
 
 ## Project structure
 
@@ -109,5 +114,5 @@ Example prediction payload:
 
 ## Notes
 
-- First run can take longer because models are trained and cached in webapp/models.
+- First run can take longer because model variants are trained and cached in webapp/models.
 - Retraining can be triggered by deleting the cached artifact file.
