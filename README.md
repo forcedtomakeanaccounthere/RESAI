@@ -2,8 +2,9 @@
 
 This app demonstrates prediction differences for healthcare utilization with and without bias mitigation using the same MEPS HC-181 pipeline from the ipynb notebook.
 
-Dataset - h181.csv
-Model - Notebook_medical_expenditure.ipynb
+- Dataset - h181.csv
+
+- Model - Notebook_medical_expenditure.ipynb
 
 ## What this app does
 
