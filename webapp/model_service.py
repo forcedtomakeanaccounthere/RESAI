@@ -546,6 +546,12 @@ class MedicalBiasModelService:
         x_train, x_val, y_train, y_val, race_train, race_val, w_train, _ = train_test_split(
             x_temp,
             y_temp,
+            race_temp,
+            w_temp,
+            test_size=0.375,
+            random_state=1,
+            stratify=y_temp,
+        )
 
         sklearn_models: Dict[str, Any] = {}
         linear_models: Dict[str, Dict[str, Any]] = {}
@@ -567,9 +573,9 @@ class MedicalBiasModelService:
             model_classifiers[name] = classifier
 
         baseline_lr = make_pipeline(
-            test_size=0.375,
-            random_state=1,
-            stratify=y_temp,
+            StandardScaler(),
+            LogisticRegression(solver="liblinear", random_state=1),
+        )
         baseline_lr.fit(x_train, y_train, logisticregression__sample_weight=w_train)
         register_sklearn_model("Logistic Regression (Original)", baseline_lr, "Logistic Regression")
         model_privacy["Logistic Regression (Original)"] = 0.0
@@ -605,32 +611,37 @@ class MedicalBiasModelService:
             model_explainability["Logistic Regression (Reweighing)"] = 0.95
 
         if DisparateImpactRemover is not None:
-            dir_model = DisparateImpactRemover(repair_level=1.0, sensitive_attribute="RACE")
-            x_train_df = pd.DataFrame(x_train, columns=FEATURE_COLUMNS)
-            x_train_dir = dir_model.fit_transform(x_train_df)[FEATURE_COLUMNS].to_numpy(dtype=float)
-            lr_dir = make_pipeline(
-                StandardScaler(),
-                LogisticRegression(solver="liblinear", random_state=1),
-            )
-            lr_dir.fit(x_train_dir, y_train, logisticregression__sample_weight=w_train)
+            try:
+                dir_model = DisparateImpactRemover(repair_level=1.0, sensitive_attribute="RACE")
+                x_train_df = pd.DataFrame(x_train, columns=FEATURE_COLUMNS)
+                x_train_dir = dir_model.fit_transform(x_train_df)[FEATURE_COLUMNS].to_numpy(dtype=float)
+                lr_dir = make_pipeline(
+                    StandardScaler(),
+                    LogisticRegression(solver="liblinear", random_state=1),
+                )
+                lr_dir.fit(x_train_dir, y_train, logisticregression__sample_weight=w_train)
 
-            class _DirWrappedModel:
-                def __init__(self, inner: Any, transformer: Any) -> None:
-                    self.inner = inner
-                    self.transformer = transformer
+                class _DirWrappedModel:
+                    def __init__(self, inner: Any, transformer: Any) -> None:
+                        self.inner = inner
+                        self.transformer = transformer
 
-                def predict_proba(self, x_data: np.ndarray) -> np.ndarray:
-                    x_df = pd.DataFrame(x_data, columns=FEATURE_COLUMNS)
-                    x_trans = self.transformer.transform(x_df)[FEATURE_COLUMNS].to_numpy(dtype=float)
-                    return self.inner.predict_proba(x_trans)
+                    def predict_proba(self, x_data: np.ndarray) -> np.ndarray:
+                        x_df = pd.DataFrame(x_data, columns=FEATURE_COLUMNS)
+                        x_trans = self.transformer.transform(x_df)[FEATURE_COLUMNS].to_numpy(dtype=float)
+                        return self.inner.predict_proba(x_trans)
 
-            register_sklearn_model(
-                "Disparate Impact Remover (LR)",
-                _DirWrappedModel(lr_dir, dir_model),
-                "Pre-processing + Logistic Regression",
-            )
-            model_privacy["Disparate Impact Remover (LR)"] = 0.0
-            model_explainability["Disparate Impact Remover (LR)"] = 0.9
+                register_sklearn_model(
+                    "Disparate Impact Remover (LR)",
+                    _DirWrappedModel(lr_dir, dir_model),
+                    "Pre-processing + Logistic Regression",
+                )
+                model_privacy["Disparate Impact Remover (LR)"] = 0.0
+                model_explainability["Disparate Impact Remover (LR)"] = 0.9
+            except Exception:
+                # AIF360's DIR may require optional BlackBoxAuditing dependency.
+                # If unavailable, continue with the rest of the training pipeline.
+                pass
 
         if SMOTE is not None:
             try:
@@ -885,9 +896,9 @@ class MedicalBiasModelService:
                 "fair": preferred_fair,
             },
         }
-            "dataset": {
-                "rows": int(len(model_df)),
-                "positive_rate": float(np.mean(y)),
+
+        self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
             "sklearn_models": sklearn_models,
             "linear_models": linear_models,
             "model_sources": model_sources,
@@ -895,21 +906,6 @@ class MedicalBiasModelService:
             "model_classifiers": model_classifiers,
             "preferred_baseline": preferred_baseline,
             "preferred_fair": preferred_fair,
-            },
-            "without_bias_mitigation": _compute_fairness_metrics(y_test, baseline_test_pred, race_test),
-            "with_bias_mitigation_reweighing": _compute_fairness_metrics(y_test, fair_test_pred, race_test),
-            "thresholds": {
-                "without_bias_mitigation": baseline_threshold,
-                "with_bias_mitigation_reweighing": fair_threshold,
-            },
-        }
-
-        self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "baseline_model": baseline_model,
-            "fair_model": fair_model,
-            "baseline_threshold": baseline_threshold,
-            "fair_threshold": fair_threshold,
             "metrics": metrics,
         }
         joblib.dump(payload, self.artifact_path)
